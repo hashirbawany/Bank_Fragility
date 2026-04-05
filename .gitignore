@@ -1,0 +1,21 @@
+# Environment
+.env
+
+# Context and task files
+CONTEXT.md
+student notebook tasks.docx
+student notebook tasks.md
+
+# Pipeline data and output
+_data/
+_output/
+
+# doit database
+.doit.db*
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Jupyter
+.ipynb_checkpoints/
