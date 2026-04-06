@@ -1,8 +1,12 @@
-# U.S. Bank Fragility — Replication Pipeline
 
-An open-source replication of **Jiang, Matvos, Piskorski & Seru (2023), "Monetary Tightening and U.S. Bank Fragility in 2023: Mark-to-Market Losses and Uninsured Depositor Runs?"** ([NBER Working Paper 31048](https://www.nber.org/papers/w31048)).
+## U.S. Bank Fragility — Replication & Extension
 
-The original paper uses proprietary WRDS data. This project reproduces the full analysis — including Table 1 and all figures — using only **free, publicly available data sources**. A single `doit` command pulls the data, runs the analysis, and builds all output documents.
+An open-source extension of Jiang, Matvos, Piskorski & Seru (2023), "Monetary Tightening and U.S. Bank Fragility in 2023" (https://www.nber.org/papers/w31048) — updated through 2025.
+  
+The original paper relies on proprietary WRDS data. This project reproduces and extends the full analysis using only free,
+publicly available sources (FFIEC Call Reports, FRED API, Yahoo Finance). A single doit command pulls the data, runs the analysis,
+and generates all output documents.
+
 
 ---
 
