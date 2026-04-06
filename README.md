@@ -12,17 +12,16 @@ and generates all output documents.
 
 ## What This Project Does
 
-The paper asks: how exposed were U.S. banks to rising interest rates in 2022–2023? When rates rise sharply, the market value of fixed-income assets falls. If losses are large enough relative to uninsured deposits, a bank faces run risk even without a solvency crisis.
+When interest rates rise sharply, fixed-income assets lose market value. If those losses are large enough relative to uninsured deposits, a bank faces run risk — even without a formal insolvency. This is exactly what drove the 2023 regional banking crisis.
 
-This replication:
+This project extends that analysis through 2025:
 
-1. Downloads every FDIC-insured bank's balance sheet from the FFIEC Call Report
-2. Pulls U.S. Treasury yield curves from FRED to compute yield shocks across six maturity buckets
-3. Calibrates an RMBS haircut multiplier from MBS ETF price data (Yahoo Finance)
-4. Applies duration-based mark-to-market losses to each bank's asset portfolio
-5. Computes a fragility measure: uninsured deposits divided by mark-to-market assets
-6. Reproduces Table 1 broken out by Small banks, Large non-GSIB banks, and G-SIBs
-
+  1. Downloads every FDIC-insured bank's balance sheet from the FFIEC Call Report
+  2. Pulls U.S. Treasury yield curves from FRED to compute yield shocks across six maturity buckets
+  3. Calibrates an RMBS duration multiplier from MBS ETF price data (Yahoo Finance)
+  4. Applies duration-based mark-to-market losses to each bank's asset portfolio
+  5. Computes a fragility measure: uninsured deposits ÷ mark-to-market assets
+  6. Reports results broken out by Small banks, Large non-GSIB banks, and G-SIBs
 ---
 
 ## Data Sources
