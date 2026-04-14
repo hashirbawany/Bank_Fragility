@@ -32,6 +32,7 @@ def md_inline(text):
     text = re.sub(r"\$.+?\$",     save_math, text)
 
     text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    text = text.replace("\u2014", "&mdash;").replace("\u2013", "&ndash;").replace("\u00e2\u20ac\u201c", "&mdash;")
     text = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
     text = re.sub(r"\*(.+?)\*",     r"<em>\1</em>", text)
     text = re.sub(r"\[(.+?)\]\((.+?)\)", r'<a href="\2">\1</a>', text)

@@ -141,7 +141,7 @@ FDIC-insured bank using three free data sources:</p>
 <strong>Part II</strong> walks through the processing steps. <strong>Part III</strong> presents the results.</p>
 
 <hr><h2>Part I &mdash; Exploratory Data Analysis</h2>
-<h1>Bank Fragility â€” Exploratory Data Analysis</h1>
+<h1>Bank Fragility &mdash; Exploratory Data Analysis</h1>
 <p>Loads and explores the parquet files in <code>_data/</code>.</p>
 <h2>1. GSIB List</h2>
 
@@ -826,17 +826,17 @@ confirming the structural differences in portfolio composition across size tiers
 Columns with the most missingness tend to be granular sub-items not required from all bank types.</p>
 
 <hr><h2>Part II &mdash; Methodology</h2>
-<h1>U.S. Bank Fragility — Methodology Notebook</h1>
+<h1>U.S. Bank Fragility &mdash; Methodology Notebook</h1>
 <h3>From Raw FFIEC Data to Processed Inputs</h3>
 
 <p>This notebook documents every data processing step between the raw downloaded files and the final inputs used in the analysis. It covers four stages:</p>
 
 <ol>
-<li><strong>FFIEC Data Cleaning</strong> — parsing and standardising Call Report schedules</li>
-<li><strong>Maturity Bucket Assignment</strong> — allocating assets across six duration windows</li>
-<li><strong>Treasury Yield Shocks</strong> — interpolating rate changes per bucket</li>
-<li><strong>RMBS Multiplier Calibration</strong> — adjusting for extension/prepayment risk</li>
-<li><strong>MTM Loss Formula</strong> — tying it all together</li>
+<li><strong>FFIEC Data Cleaning</strong> &mdash; parsing and standardising Call Report schedules</li>
+<li><strong>Maturity Bucket Assignment</strong> &mdash; allocating assets across six duration windows</li>
+<li><strong>Treasury Yield Shocks</strong> &mdash; interpolating rate changes per bucket</li>
+<li><strong>RMBS Multiplier Calibration</strong> &mdash; adjusting for extension/prepayment risk</li>
+<li><strong>MTM Loss Formula</strong> &mdash; tying it all together</li>
 </ol>
 
 <p><strong>Reference:</strong> Jiang, E., Matvos, G., Piskorski, T., &amp; Seru, A. (2023). <em>Monetary Tightening and U.S. Bank Fragility in 2023: Mark-to-Market Losses and Uninsured Depositor Runs?</em> NBER Working Paper 31048.</p>
@@ -846,8 +846,8 @@ Columns with the most missingness tend to be granular sub-items not required fro
 <p>The raw FFIEC ZIP file contains five schedule files (RC, RC-A, RC-B, RC-C I, RC-E). Each is a tab-delimited text file with two header rows:</p>
 
 <ul>
-<li><strong>Row 0</strong> — FFIEC mnemonic codes (e.g. <code>RCFD2170</code> = total assets)</li>
-<li><strong>Row 1</strong> — plain-English descriptions (dropped before analysis)</li>
+<li><strong>Row 0</strong> &mdash; FFIEC mnemonic codes (e.g. <code>RCFD2170</code> = total assets)</li>
+<li><strong>Row 1</strong> &mdash; plain-English descriptions (dropped before analysis)</li>
 </ul>
 
 <p>The first column (<code>IDRSSD</code>) is the Federal Reserve's unique bank identifier.</p>
@@ -860,7 +860,7 @@ Columns with the most missingness tend to be granular sub-items not required fro
 <li>Skip the description row (row 1)</li>
 <li>Rename <code>IDRSSD</code> to a consistent key</li>
 <li>Strip whitespace from column names</li>
-<li>Coerce all non-key columns to numeric — non-numeric entries (missing data,</li>
+<li>Coerce all non-key columns to numeric &mdash; non-numeric entries (missing data,</li>
 </ol>
 <p>footnote markers) become <code>NaN</code></p>
 
@@ -875,7 +875,7 @@ for deposits — consistent with the original paper.</p>
 <hr>
 <h2>2. Maturity Bucket Assignment</h2>
 
-<p>The mark-to-market calculation requires knowing how much of each asset matures in each of six time windows. RC-B provides actual per-bucket data for RMBS (six separate line items per bank). For all other asset categories, the FFIEC only gives a single total — so we spread that total across the six buckets using <strong>fixed weight distributions</strong> based on industry averages.</p>
+<p>The mark-to-market calculation requires knowing how much of each asset matures in each of six time windows. RC-B provides actual per-bucket data for RMBS (six separate line items per bank). For all other asset categories, the FFIEC only gives a single total &mdash; so we spread that total across the six buckets using <strong>fixed weight distributions</strong> based on industry averages.</p>
 
 <div class="table-wrap"><table>
 <thead><tr>
@@ -890,22 +890,22 @@ for deposits — consistent with the original paper.</p>
 </tr>
 <tr>
 <td><code>1_3y</code></td>
-<td>1–3 years</td>
+<td>1&ndash;3 years</td>
 <td>2.0 yr</td>
 </tr>
 <tr>
 <td><code>3_5y</code></td>
-<td>3–5 years</td>
+<td>3&ndash;5 years</td>
 <td>4.0 yr</td>
 </tr>
 <tr>
 <td><code>5_10y</code></td>
-<td>5–10 years</td>
+<td>5&ndash;10 years</td>
 <td>7.5 yr</td>
 </tr>
 <tr>
 <td><code>10_15y</code></td>
-<td>10–15 years</td>
+<td>10&ndash;15 years</td>
 <td>12.5 yr</td>
 </tr>
 <tr>
@@ -1062,7 +1062,7 @@ and the dashed line is the straight-line fit between them.</p>
 
 <p>$$\Delta P / P \approx -D \times \Delta y$$</p>
 
-<p>For mortgage-backed securities, this formula <strong>understates</strong> losses when rates rise sharply. Higher rates reduce prepayments — homeowners no longer refinance — so the mortgages underlying the securities take much longer to mature than initially expected. This <strong>extends</strong> the effective duration and amplifies the price drop. The phenomenon is called <strong>extension risk</strong>.</p>
+<p>For mortgage-backed securities, this formula <strong>understates</strong> losses when rates rise sharply. Higher rates reduce prepayments &mdash; homeowners no longer refinance &mdash; so the mortgages underlying the securities take much longer to mature than initially expected. This <strong>extends</strong> the effective duration and amplifies the price drop. The phenomenon is called <strong>extension risk</strong>.</p>
 
 <p>To account for it, we multiply MBS and residential mortgage loan losses by the <code>rmbs_multiplier</code> derived from ETF price returns. This is calibrated by comparing how far the MBB MBS ETF actually fell against what plain duration arithmetic would have predicted.</p>
 
@@ -1254,7 +1254,7 @@ broken down by asset type and maturity bucket. Only cells with non-zero holdings
 </table>
 </div></div>
 <hr><h2>Part III &mdash; Analysis &amp; Results</h2>
-<h1>U.S. Bank Fragility — Analysis Notebook</h1>
+<h1>U.S. Bank Fragility &mdash; Analysis Notebook</h1>
 <h3>Results Through 2025</h3>
 
 <p>This notebook presents the results of the mark-to-market loss analysis, extending Jiang et al. (2023) through the most recent available quarter.</p>
@@ -1262,8 +1262,8 @@ broken down by asset type and maturity bucket. Only cells with non-zero holdings
 <p><strong>Contents:</strong></p>
 <ol>
 <li>MTM Loss Distribution across banks</li>
-<li>Most Exposed Banks — top 10 by loss share</li>
-<li>Table 1 — Aggregate Fragility Summary</li>
+<li>Most Exposed Banks &mdash; top 10 by loss share</li>
+<li>Table 1 &mdash; Aggregate Fragility Summary</li>
 <li>Fragility Metric by Bank Group</li>
 <li>Key Findings &amp; Interpretation</li>
 </ol>
@@ -1401,7 +1401,7 @@ in Call Report data.</p>
 </table>
 </div></div>
 <hr>
-<h2>3. Table 1 — Aggregate Fragility Summary</h2>
+<h2>3. Table 1 &mdash; Aggregate Fragility Summary</h2>
 
 <p>Table 1 replicates the core result from Jiang et al. (2023), extended through the report quarter. It reports aggregate and bank-level statistics on MTM losses and fragility, broken out by bank size group.</p>
 
@@ -1553,7 +1553,7 @@ to compare severity on a level playing field.</p>
 
 <p>$$\text{Fragility} = \frac{\text{Uninsured Deposits}}{\text{Mark-to-Market Assets}} \times 100$$</p>
 
-<p>A value above 100 indicates the bank could not cover a full uninsured-depositor run at mark-to-market prices — even before any solvency judgment is made.</p>
+<p>A value above 100 indicates the bank could not cover a full uninsured-depositor run at mark-to-market prices &mdash; even before any solvency judgment is made.</p>
 
 <p>The charts show the distribution of fragility scores across individual banks.
 The vertical red line marks the 100% threshold — above which a bank's uninsured deposits
@@ -1617,10 +1617,10 @@ of extremely high-fragility institutions.</p>
 <p>The rate shock that unfolded from January 2020 through the report date represents one of the steepest sustained increases in U.S. interest rates in modern history. The estimated system-wide mark-to-market losses run into the hundreds of billions of dollars when aggregated across all FDIC-insured institutions.</p>
 
 <h3>Who bears the losses</h3>
-<p><strong>G-SIBs</strong> account for the largest share of absolute dollar losses — simply because they hold the largest asset portfolios. But on a <strong>relative</strong> basis (loss as a percent of total assets), large non-GSIB banks often fare worst, because many expanded aggressively into long-duration fixed-income securities during the low-rate era of 2020–2021.</p>
+<p><strong>G-SIBs</strong> account for the largest share of absolute dollar losses &mdash; simply because they hold the largest asset portfolios. But on a <strong>relative</strong> basis (loss as a percent of total assets), large non-GSIB banks often fare worst, because many expanded aggressively into long-duration fixed-income securities during the low-rate era of 2020&ndash;2021.</p>
 
 <h3>The fragility picture</h3>
-<p>The fragility measure captures whether a bank could survive a coordinated run by uninsured depositors at mark-to-market prices. Results show that a meaningful share of banks in every size group exceed the 100% threshold — they are technically fragile in this sense even before any judgment about actual run probability is made.</p>
+<p>The fragility measure captures whether a bank could survive a coordinated run by uninsured depositors at mark-to-market prices. Results show that a meaningful share of banks in every size group exceed the 100% threshold &mdash; they are technically fragile in this sense even before any judgment about actual run probability is made.</p>
 
 <h3>Comparison with the original paper (2023)</h3>
 <p>Jiang et al. (2023) found approximately $2.2 trillion in system-wide MTM losses as of Q1 2023, with roughly 190 banks potentially insolvent under a full uninsured-depositor run scenario. This extension tracks whether the picture has improved as the Federal Reserve has begun cutting rates, or whether balance-sheet vulnerabilities persist.</p>
@@ -1632,6 +1632,6 @@ of extremely high-fragility institutions.</p>
 <li>Hedging (interest rate swaps, options) is not observable in Call Report data</li>
 <li>Actual run dynamics depend on deposit insurance, FHLB access, and Fed liquidity</li>
 </ul>
-<p>facilities — none of which are captured here</p>
+<p>facilities &mdash; none of which are captured here</p>
 </body>
 </html>
