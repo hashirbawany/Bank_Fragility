@@ -6,6 +6,10 @@ CONTEXT.md
 student notebook tasks.docx
 student notebook tasks.md
 
+# Previous-author replication files
+prev author table 1.ipynb
+replication_data_prev_author.ipynb
+
 # Pipeline data and output
 _data/
 _output/
@@ -19,3 +23,6 @@ __pycache__/
 
 # Jupyter
 .ipynb_checkpoints/
+
+# Outdated scripts and outputs
+outdated/

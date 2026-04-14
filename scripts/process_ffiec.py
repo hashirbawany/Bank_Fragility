@@ -261,6 +261,23 @@ with zipfile.ZipFile(ZIP_PATH) as zf:
             f"Could not find RCB files for {REPORT_DATE} in zip."
         )
 
+    # Schedule RC-O: Other Data for Deposit Insurance Assessments
+    # Contains rcon5597 = "Estimated amount of uninsured deposits in domestic offices"
+    # Mandatory for large banks; smaller banks may not file RC-O.
+    rco_part_names = [
+        name for name in zf.namelist()
+        if f"FFIEC CDR Call Schedule RCO {REPORT_DATE}".lower() in name.lower()
+    ]
+    if rco_part_names:
+        rco = pd.concat(
+            [read_ffiec(zf, name) for name in sorted(rco_part_names)], axis=1
+        )
+        rco = rco.loc[:, ~rco.columns.duplicated()]
+        print(f"Loaded RCO schedule ({len(rco_part_names)} part(s)), {len(rco)} rows")
+    else:
+        rco = pd.DataFrame()
+        print("RCO schedule not found in zip.")
+
 rcfd_df = pd.concat(
     [
         rc[[c for c in rc.columns if c.startswith("rcfd")]],
@@ -295,12 +312,17 @@ global_cmbs = [
     "rcfdk143", "rcfdk145", "rcfdk147", "rcfdk149", "rcfdk151", "rcfdk153", "rcfdk157",
 ]
 global_abs = ["rcfdc988", "rcfdc027"]
-global_other = ["rcfd1738", "rcfd1741", "rcfd1743", "rcfd1746"]
+global_other = [
+    "rcfd1738", "rcfd1741",   # Other domestic debt securities (HTM/AFS fair value)
+    "rcfd1743", "rcfd1746",   # Foreign debt securities (HTM/AFS fair value)
+    "rcfd8497", "rcfd8499",   # State & local govt (municipal) bonds (HTM/AFS fair value)
+]
 global_rs_loan = [
     "rcfdf158", "rcfdf159", "rcfd1420", "rcfd1420", "rcfd1797",
     "rcfd5367", "rcfd5368", "rcfd1460", "rcfdf160", "rcfdf161",
 ]
-global_rs_residential_loan = ["rcfd1420", "rcfd1797", "rcfd5367", "rcfd5368", "rcfd1460"]
+global_rs_residential_loan = ["rcfd5367"]  # first-lien closed-end 1-4 family only (matches prev author)
+global_rs_residential_other = ["rcfd1420", "rcfd1797", "rcfd5368", "rcfd1460"]  # HELOC, junior lien, multifamily → other_loan
 global_rs_commercial_loan = ["rcfdf160", "rcfdf161"]
 global_rs_other_loan = ["rcfdf158", "rcfdf159"]
 global_ci_loan = ["rcfd1763", "rcfd1764"]
@@ -315,12 +337,17 @@ domestic_rmbs = [
 ]
 domestic_cmbs = ["rconk143", "rconk145", "rconk147", "rconk149", "rconk151", "rconk153", "rconk157"]
 domestic_abs = ["rconc988", "rconc027", "rconht59", "rconht61"]
-domestic_other = ["rcon1738", "rcon1741", "rcon1743", "rcon1746"]
+domestic_other = [
+    "rcon1738", "rcon1741",   # Other domestic debt securities (HTM/AFS fair value)
+    "rcon1743", "rcon1746",   # Foreign debt securities (HTM/AFS fair value)
+    "rcon8497", "rcon8499",   # State & local govt (municipal) bonds (HTM/AFS fair value)
+]
 domestic_rs_loan = [
     "rconf158", "rconf159", "rcon1420", "rcon1420", "rcon1797",
     "rcon5367", "rcon5368", "rcon1460", "rconf160", "rconf161",
 ]
-domestic_rs_residential_loan = ["rcon1420", "rcon1797", "rcon5367", "rcon5368", "rcon1460"]
+domestic_rs_residential_loan = ["rcon5367"]  # first-lien closed-end 1-4 family only (matches prev author)
+domestic_rs_residential_other = ["rcon1420", "rcon1797", "rcon5368", "rcon1460"]  # HELOC, junior lien, multifamily → other_loan
 domestic_rs_commercial_loan = ["rconf160", "rconf161"]
 domestic_rs_other_loan = ["rconf158", "rconf159"]
 domestic_ci_loan = ["rcon1766"]
@@ -372,23 +399,47 @@ check_cols(rcon_df, domestic_non_rep_loan, "domestic_non_rep_loan")
 print("\nChecking rcfn_df...")
 check_cols(rcfn_df, ["rcfn2200"], "rcfn2200")
 
-# Maturity bucket mappings for mark-to-market calculations
+# Actual RMBS maturity codes from RC-B schedule (rcfda555-562 / rcona555-562).
+# These are the pass-through MBS maturity breakdown, unlike the g3xx codes which
+# are issuer-type codes (GNMA/FNMA/private) — not maturity.
+# Bucket mapping (a559 = 5-15yr is split 50/50 to approximate prev author's single
+# 5-15yr bucket; a562 = other MBS >3yr → 5_10y as moderate assumption):
 global_rmbs_buckets = {
-    "lt1y": ["rcfdg301", "rcfdg303"],
-    "1_3y": ["rcfdg305", "rcfdg307"],
-    "3_5y": ["rcfdg309", "rcfdg311"],
-    "5_10y": ["rcfdg313", "rcfdg315"],
-    "10_15y": ["rcfdg317", "rcfdg319"],
-    "15plus": ["rcfdg321", "rcfdg323"],
+    "lt1y":   ["rcfda555", "rcfda556"],           # <3m, 3m-1y pass-through
+    "1_3y":   ["rcfda557", "rcfda561"],           # 1-3y pass-through + other MBS <3y
+    "3_5y":   ["rcfda558"],                        # 3-5y pass-through
+    "5_10y":  [],                                  # half of a559 added programmatically
+    "10_15y": [],                                  # half of a559 added programmatically
+    "15plus": ["rcfda560"],                        # >15y pass-through
+}
+# a559 (5-15y) and a562 (other MBS >3y) assigned programmatically below
+domestic_rmbs_buckets = {
+    "lt1y":   ["rcona555", "rcona556"],
+    "1_3y":   ["rcona557", "rcona561"],
+    "3_5y":   ["rcona558"],
+    "5_10y":  [],                                  # half of a559 added programmatically
+    "10_15y": [],                                  # half of a559 added programmatically
+    "15plus": ["rcona560"],
 }
 
-domestic_rmbs_buckets = {
-    "lt1y": ["rconht55", "rconht57"],
-    "1_3y": ["rcong309", "rcong311"],
-    "3_5y": ["rcong313", "rcong315"],
-    "5_10y": ["rcong317", "rcong319"],
-    "10_15y": ["rcong321"],
-    "15plus": ["rcong323"],
+# Actual treasury maturity codes from RC-B (rcfda549-554 / rcona549-554).
+# a553 = 5-15yr is split 50/50 across 5_10y and 10_15y (avg ≈ -19% shock,
+# matching prev author's combined 5-15yr bucket at -20%).
+global_tsy_maturity_codes = {
+    "lt1y":   ["rcfda549", "rcfda550"],           # <3m, 3m-1y
+    "1_3y":   ["rcfda551"],                        # 1-3y
+    "3_5y":   ["rcfda552"],                        # 3-5y
+    "5_10y":  [],                                  # half of a553 added programmatically
+    "10_15y": [],                                  # half of a553 added programmatically
+    "15plus": ["rcfda554"],                        # >15y
+}
+domestic_tsy_maturity_codes = {
+    "lt1y":   ["rcona549", "rcona550"],
+    "1_3y":   ["rcona551"],
+    "3_5y":   ["rcona552"],
+    "5_10y":  [],                                  # half of a553 added programmatically
+    "10_15y": [],                                  # half of a553 added programmatically
+    "15plus": ["rcona554"],
 }
 
 
@@ -435,14 +486,35 @@ rcon_data["Non_Rep_Loan"] = rcon_df[domestic_non_rep_loan].sum(axis=1)
 rcon_data["Fed_Fund_Sold"] = rcon_df["rconb987"]
 rcon_data["Reverse_Repo"] = rcon_df["rconb989"]
 
-# Bucketed RMBS exposures
-for bucket, cols in global_rmbs_buckets.items():
-    existing_cols = [c for c in cols if c in rcfd_df.columns]
-    rcfd_data[f"rmbs_{bucket}"] = rcfd_df[existing_cols].sum(axis=1) if existing_cols else 0
+# Bucketed RMBS exposures from actual RC-B maturity codes (rcfda555-562 / rcona555-562).
+# a559 (5-15yr) is split 50/50 between 5_10y and 10_15y.
+# a562 (other MBS >3yr) is assigned to 5_10y (moderate duration assumption).
+bucket_names_rmbs = ["lt1y", "1_3y", "3_5y", "5_10y", "10_15y", "15plus"]
+for bucket in bucket_names_rmbs:
+    rcfd_data[f"rmbs_{bucket}"] = 0.0
+    rcon_data[f"rmbs_{bucket}"] = 0.0
 
-for bucket, cols in domestic_rmbs_buckets.items():
-    existing_cols = [c for c in cols if c in rcon_df.columns]
-    rcon_data[f"rmbs_{bucket}"] = rcon_df[existing_cols].sum(axis=1) if existing_cols else 0
+for bucket, codes in global_rmbs_buckets.items():
+    for code in codes:
+        if code in rcfd_df.columns:
+            rcfd_data[f"rmbs_{bucket}"] += rcfd_df[code].fillna(0)
+if "rcfda559" in rcfd_df.columns:
+    half_a559 = rcfd_df["rcfda559"].fillna(0) / 2
+    rcfd_data["rmbs_5_10y"]  += half_a559
+    rcfd_data["rmbs_10_15y"] += half_a559
+if "rcfda562" in rcfd_df.columns:
+    rcfd_data["rmbs_5_10y"] += rcfd_df["rcfda562"].fillna(0)
+
+for bucket, codes in domestic_rmbs_buckets.items():
+    for code in codes:
+        if code in rcon_df.columns:
+            rcon_data[f"rmbs_{bucket}"] += rcon_df[code].fillna(0)
+if "rcona559" in rcon_df.columns:
+    half_rcon_a559 = rcon_df["rcona559"].fillna(0) / 2
+    rcon_data["rmbs_5_10y"]  += half_rcon_a559
+    rcon_data["rmbs_10_15y"] += half_rcon_a559
+if "rcona562" in rcon_df.columns:
+    rcon_data["rmbs_5_10y"] += rcon_df["rcona562"].fillna(0)
 
 # Initialize non-RMBS buckets
 bucket_names = ["lt1y", "1_3y", "3_5y", "5_10y", "10_15y", "15plus"]
@@ -490,8 +562,17 @@ OTHER_LOAN_WEIGHTS = {
     "15plus": 0.10,
 }
 
-# Allocate stylized non-RMBS maturities
-allocate_across_buckets(rcfd_data, "security_treasury", "treasury", TREASURY_WEIGHTS)
+# Allocate treasury using actual RC-B maturity codes (rcfda549-554).
+# a553 (5-15yr) is split 50/50 between 5_10y and 10_15y.
+for bucket, codes in global_tsy_maturity_codes.items():
+    for code in codes:
+        if code in rcfd_df.columns:
+            rcfd_data[f"treasury_{bucket}"] += rcfd_df[code].fillna(0)
+if "rcfda553" in rcfd_df.columns:
+    half_a553 = rcfd_df["rcfda553"].fillna(0) / 2
+    rcfd_data["treasury_5_10y"]  += half_a553
+    rcfd_data["treasury_10_15y"] += half_a553
+
 allocate_across_buckets(rcfd_data, "security_cmbs", "other_assets", OTHER_ASSET_WEIGHTS)
 allocate_across_buckets(rcfd_data, "security_abs", "other_assets", OTHER_ASSET_WEIGHTS)
 allocate_across_buckets(rcfd_data, "security_other", "other_assets", OTHER_ASSET_WEIGHTS)
@@ -504,10 +585,20 @@ rcfd_data["other_loan_total_tmp"] = (
     + rcfd_data["Comm_Indu_Loan"]
     + rcfd_data["Consumer_Loan"]
     + rcfd_data["Non_Rep_Loan"].fillna(0)
+    + rcfd_df[global_rs_residential_other].fillna(0).sum(axis=1)  # HELOC, junior lien, multifamily
 )
 allocate_across_buckets(rcfd_data, "other_loan_total_tmp", "other_loan", OTHER_LOAN_WEIGHTS)
 
-allocate_across_buckets(rcon_data, "security_treasury", "treasury", TREASURY_WEIGHTS)
+# Allocate treasury using actual RC-B maturity codes (rcona549-554).
+for bucket, codes in domestic_tsy_maturity_codes.items():
+    for code in codes:
+        if code in rcon_df.columns:
+            rcon_data[f"treasury_{bucket}"] += rcon_df[code].fillna(0)
+if "rcona553" in rcon_df.columns:
+    half_rcon_a553 = rcon_df["rcona553"].fillna(0) / 2
+    rcon_data["treasury_5_10y"]  += half_rcon_a553
+    rcon_data["treasury_10_15y"] += half_rcon_a553
+
 allocate_across_buckets(rcon_data, "security_cmbs", "other_assets", OTHER_ASSET_WEIGHTS)
 allocate_across_buckets(rcon_data, "security_abs", "other_assets", OTHER_ASSET_WEIGHTS)
 allocate_across_buckets(rcon_data, "security_other", "other_assets", OTHER_ASSET_WEIGHTS)
@@ -520,6 +611,7 @@ rcon_data["other_loan_total_tmp"] = (
     + rcon_data["Comm_Indu_Loan"]
     + rcon_data["Consumer_Loan"]
     + rcon_data["Non_Rep_Loan"].fillna(0)
+    + rcon_df[domestic_rs_residential_other].fillna(0).sum(axis=1)  # HELOC, junior lien, multifamily
 )
 allocate_across_buckets(rcon_data, "other_loan_total_tmp", "other_loan", OTHER_LOAN_WEIGHTS)
 
@@ -537,10 +629,24 @@ bank_asset = pd.merge(
 )
 
 asset_df2_cols = [c for c in bank_asset.columns if c.endswith("_df2")]
+
+# Step 1: fillna — use RCON value when RCFD is NaN
 for col_df2 in asset_df2_cols:
     col = col_df2.replace("_df2", "")
     if col in bank_asset.columns:
         bank_asset[col] = bank_asset[col].fillna(bank_asset[col_df2])
+
+# Step 2: for allocated bucket columns, also override 0 with RCON value.
+# Root cause: allocate_across_buckets fills NaN source with 0 → bucket gets
+# 0.0 (not NaN) in RCFD for banks that only report RCON data → fillna skips them.
+_bucket_prefixes = ("rmbs_", "treasury_", "other_assets_", "res_mtg_", "other_loan_")
+for col_df2 in asset_df2_cols:
+    col = col_df2.replace("_df2", "")
+    if col in bank_asset.columns and any(col.startswith(p) for p in _bucket_prefixes):
+        rcon_val = bank_asset[col_df2].fillna(0)
+        mask = (bank_asset[col].fillna(0) == 0) & (rcon_val > 0)
+        bank_asset.loc[mask, col] = bank_asset.loc[mask, col_df2]
+
 bank_asset = bank_asset.drop(columns=asset_df2_cols)
 
 print("\nPost-merge bucket totals:")
@@ -553,9 +659,31 @@ global_liability = pd.DataFrame(index=rcon_df.index)
 global_liability["Total Liability"] = rcfd_df["rcfd2948"]
 global_liability["Domestic Deposit"] = rcon_df["rcon2200"]
 global_liability["Insured Deposit"] = rcon_df[insured_deposit].sum(axis=1)
-global_liability["Uninsured Deposit"] = (
-    global_liability["Domestic Deposit"] - global_liability["Insured Deposit"]
-)
+
+# Uninsured deposits: prefer rcon5597 (Schedule RC-O, directly reported estimated
+# uninsured deposits). Mandatory for large banks (>=~$1B deposits); small banks are
+# exempt and typically leave it blank.
+# Fallback: empirical fraction of domestic deposits for banks without rcon5597.
+# Calibrated at 25% based on FDIC Q4 2022 aggregate data for small community banks
+# (prev author replication shows small bank Uninsured/Domestic ≈ 21.6/87.1 ≈ 24.8%).
+# The prev author uses WRDS which provides insured deposit estimates for all banks;
+# this fraction is the closest free-data equivalent.
+SMALL_BANK_UNINSURED_FRACTION = 0.25
+
+if not rco.empty and "rcon5597" in rco.columns:
+    rco_unins = rco["rcon5597"].reindex(global_liability.index)
+    has_rco = rco_unins.fillna(0) > 0
+    global_liability["Uninsured Deposit"] = np.where(
+        has_rco,
+        rco_unins,
+        (global_liability["Domestic Deposit"] * SMALL_BANK_UNINSURED_FRACTION).clip(lower=0),
+    )
+    print(f"  Uninsured Deposit: used rcon5597 for {has_rco.sum()} banks, "
+          f"empirical fraction ({SMALL_BANK_UNINSURED_FRACTION:.0%}) for {(~has_rco).sum()} banks")
+else:
+    global_liability["Uninsured Deposit"] = (
+        global_liability["Domestic Deposit"] * SMALL_BANK_UNINSURED_FRACTION
+    ).clip(lower=0)
 global_liability["Uninsured Time Deposits"] = rcon_df["rconj474"]
 global_liability["Uninsured Long-Term Time Deposits"] = rcon_df[uninsured_long].sum(axis=1)
 global_liability["Uninsured Short-Term Time Deposits"] = rcon_df["rconk222"]

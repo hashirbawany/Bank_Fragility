@@ -13,8 +13,17 @@ MARKET_START_DATE = pd.to_datetime(os.getenv("MARKET_START_DATE", "2020-01-01"))
 MARKET_END_DATE = pd.to_datetime(os.getenv("MARKET_END_DATE", "2023-12-31"))
 
 TICKERS: Dict[str, str] = {
-    "rmbs_px": "SPMB",
-    "cmbs_px": "CMBS",
+    # MBS — iShares MBS ETF (data back to 2007; replaces SPMB which launched Mar 2020)
+    "mbs_px":     "MBB",
+    # Treasury benchmark — iShares US Treasury Bond ETF (blended; RMBS-mult denominator)
+    "tsy_bmark":  "GOVT",
+    # Treasury ETFs by maturity bucket (all data back to ≥2007)
+    "tsy_lt1y":   "SHV",   # iShares Short Treasury Bond ETF    (<1 yr)
+    "tsy_1_3y":   "SHY",   # iShares 1-3 Year Treasury Bond ETF
+    "tsy_3_5y":   "IEI",   # iShares 3-7 Year Treasury Bond ETF  (proxy for 3-5 yr)
+    "tsy_5_10y":  "IEF",   # iShares 7-10 Year Treasury Bond ETF (proxy for 5-10 yr)
+    "tsy_10_15y": "TLH",   # iShares 10-20 Year Treasury Bond ETF(proxy for 10-15 yr)
+    "tsy_15plus": "TLT",   # iShares 20+ Year Treasury Bond ETF  (proxy for 15+ yr)
 }
 
 
@@ -26,14 +35,16 @@ def _get_price_series(px: pd.DataFrame, ticker: str) -> pd.Series:
     if px is None or px.empty:
         raise ValueError(f"No price data returned for {ticker}.")
 
+    # Use Close (not Adj Close) so we capture pure price changes (capital gains/losses)
+    # without dividend income. Treasury / MBS ETFs don't have splits, so Close is reliable.
     if isinstance(px.columns, pd.MultiIndex):
-        for field in ("Adj Close", "Close"):
+        for field in ("Close", "Adj Close"):
             if (field, ticker) in px.columns:
                 s = px[(field, ticker)]
                 s.name = ticker
                 return s
 
-        for field in ("Adj Close", "Close"):
+        for field in ("Close", "Adj Close"):
             if field in px.columns.get_level_values(0):
                 sub = px[field]
                 if isinstance(sub, pd.DataFrame):
@@ -44,17 +55,17 @@ def _get_price_series(px: pd.DataFrame, ticker: str) -> pd.Series:
                 return s
 
         raise KeyError(
-            f"No Adj Close/Close found for {ticker}. Columns: {list(px.columns)}"
+            f"No Close/Adj Close found for {ticker}. Columns: {list(px.columns)}"
         )
 
-    for field in ("Adj Close", "Close"):
+    for field in ("Close", "Adj Close"):
         if field in px.columns:
             s = px[field].copy()
             s.name = ticker
             return s
 
     raise KeyError(
-        f"No Adj Close/Close found for {ticker}. Columns: {px.columns.tolist()}"
+        f"No Close/Adj Close found for {ticker}. Columns: {px.columns.tolist()}"
     )
 
 
@@ -91,8 +102,8 @@ def pull_etf_prices(
 
     df = pd.concat(series, axis=1, join="outer").sort_index()
 
-    # Keep dates where the core series are available
-    required_cols = list(tickers.keys())
+    # Keep dates where all series are available (all tickers have data from ≥2007)
+    required_cols = [c for c in tickers.keys() if c not in ("mbs_ret",)]
     df = df.dropna(subset=required_cols, how="any")
 
     df = df.reset_index()
@@ -102,10 +113,8 @@ def pull_etf_prices(
     df = df.dropna(subset=["date"]).sort_values("date").reset_index(drop=True)
 
     # Daily returns for diagnostics
-    if "rmbs_px" in df.columns:
-        df["rmbs_ret"] = df["rmbs_px"].pct_change()
-    if "cmbs_px" in df.columns:
-        df["cmbs_ret"] = df["cmbs_px"].pct_change()
+    if "mbs_px" in df.columns:
+        df["mbs_ret"] = df["mbs_px"].pct_change()
 
     return df
 

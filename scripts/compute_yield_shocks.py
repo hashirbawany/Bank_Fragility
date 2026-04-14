@@ -1,3 +1,17 @@
+"""
+Compute mark-to-market price changes per maturity bucket using actual Treasury
+ETF total returns (iShares SHV / SHY / IEI / IEF / TLH / TLT).
+
+Methodology: same as Jiang et al. (2023) — price change = (P_end / P_start) - 1
+for each bucket ETF over the configured shock window.
+
+RMBS multiplier = MBB total return / GOVT total return over the same window,
+matching the Peizhe Huang replication approach.
+
+Outputs market_shocks.parquet with columns:
+    d_tsy_{bucket}   — price change fraction (e.g. -0.14 = -14 %)
+    rmbs_multiplier  — MBS / treasury-benchmark price-change ratio
+"""
 import os
 from pathlib import Path
 
@@ -10,97 +24,91 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 DATA_DIR = Path(__file__).resolve().parent.parent / "_data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-REPORT_DATE_SLASH = os.getenv("REPORT_DATE_SLASH", "12/31/2025")  # MM/DD/YYYY — e.g. 03/31/2025
+REPORT_DATE_SLASH = os.getenv("REPORT_DATE_SLASH", "12/31/2025")  # MM/DD/YYYY
 REPORT_DATE       = REPORT_DATE_SLASH.replace("/", "")
-# Derive shock window automatically:
-#   start = 2020-01-01 (rates were near-zero throughout 2020 — the baseline)
-#   end   = the report date itself
+
 MARKET_START_DATE = pd.to_datetime("2020-01-01")
-MARKET_END_DATE   = pd.to_datetime(f"{REPORT_DATE[4:]}-{REPORT_DATE[:2]}-{REPORT_DATE[2:4]}")
-RMBS_MULTIPLIER   = float(os.getenv("RMBS_MULTIPLIER", "1.25"))
+MARKET_END_DATE   = pd.to_datetime(
+    f"{REPORT_DATE[4:]}-{REPORT_DATE[:2]}-{REPORT_DATE[2:4]}"
+)
 
-# FRED maturities (years) and their column names
-FRED_MATURITIES = [1, 3, 5, 10, 20, 30]
-FRED_COLS       = ["dgs1", "dgs3", "dgs5", "dgs10", "dgs20", "dgs30"]
-
-# Each bucket is represented by its midpoint (years)
-# Used to interpolate a yield from the FRED curve
-BUCKETS = {
-    "lt1y":   0.5,
-    "1_3y":   2.0,
-    "3_5y":   4.0,
-    "5_10y":  7.5,
-    "10_15y": 12.5,
-    "15plus": 22.0,
+# Mapping from bucket name -> column in mbs_etfs.parquet
+BUCKET_PRICE_COLS = {
+    "lt1y":    "tsy_lt1y",    # SHV  — iShares Short Treasury Bond ETF
+    "1_3y":    "tsy_1_3y",    # SHY  — iShares 1-3 Year Treasury Bond ETF
+    "3_5y":    "tsy_3_5y",    # IEI  — iShares 3-7 Year Treasury Bond ETF
+    "5_10y":   "tsy_5_10y",   # IEF  — iShares 7-10 Year Treasury Bond ETF
+    "10_15y":  "tsy_10_15y",  # TLH  — iShares 10-20 Year Treasury Bond ETF
+    "15plus":  "tsy_15plus",  # TLT  — iShares 20+ Year Treasury Bond ETF
 }
 
-
-def interpolate_yield(yields: pd.Series, maturity: float) -> float:
-    """
-    Linearly interpolate a yield at a given maturity (years)
-    from the available FRED maturity points.
-    """
-    known_maturities = np.array(FRED_MATURITIES, dtype=float)
-    known_yields     = yields[FRED_COLS].values.astype(float)
-
-    # Drop NaN points before interpolating
-    mask = ~np.isnan(known_yields)
-    if mask.sum() < 2:
-        raise ValueError(f"Not enough yield data to interpolate. Got: {known_yields}")
-
-    return float(np.interp(maturity, known_maturities[mask], known_yields[mask]))
+MBS_COL      = "mbs_px"    # MBB — iShares MBS ETF
+TSY_BMARK    = "tsy_bmark" # GOVT — iShares US Treasury Bond ETF (blended benchmark)
 
 
-def get_yield_on_date(treasury: pd.DataFrame, date: pd.Timestamp) -> pd.Series:
-    """
-    Return the yield curve row closest to the given date.
-    """
-    treasury = treasury.sort_values("date")
-    idx = (treasury["date"] - date).abs().idxmin()
-    row = treasury.loc[idx]
-    print(f"  Using date: {row['date'].date()} (requested: {date.date()})")
-    return row
+def _price_on_date(df: pd.DataFrame, col: str, target: pd.Timestamp) -> float:
+    """Return Adj-Close price on the trading day nearest to target."""
+    df = df.sort_values("date")
+    idx = (df["date"] - target).abs().idxmin()
+    row = df.loc[idx]
+    print(f"    {col}: using {row['date'].date()}  (requested {target.date()})")
+    return float(row[col])
+
+
+def _price_change(df: pd.DataFrame, col: str,
+                  start: pd.Timestamp, end: pd.Timestamp) -> float:
+    p0 = _price_on_date(df, col, start)
+    p1 = _price_on_date(df, col, end)
+    return (p1 / p0) - 1.0
 
 
 def main() -> None:
-    treasury = pd.read_parquet(DATA_DIR / "treasury_yields.parquet")
-    treasury["date"] = pd.to_datetime(treasury["date"])
+    etfs_path = DATA_DIR / "mbs_etfs.parquet"
+    if not etfs_path.exists():
+        raise FileNotFoundError(
+            f"Missing ETF price file: {etfs_path}\n"
+            "Run: doit pull_mbs"
+        )
+
+    etfs = pd.read_parquet(etfs_path)
+    etfs["date"] = pd.to_datetime(etfs["date"])
 
     print(f"Shock window: {MARKET_START_DATE.date()} -> {MARKET_END_DATE.date()}")
+    print(f"ETF data covers: {etfs['date'].min().date()} to {etfs['date'].max().date()}")
     print()
 
-    print("Start date yield curve:")
-    start_yields = get_yield_on_date(treasury, MARKET_START_DATE)
+    # ── Treasury bucket price changes ─────────────────────────────────────────
+    shocks: dict[str, float] = {}
+    print("Treasury ETF price changes (start -> end):")
+    for bucket, col in BUCKET_PRICE_COLS.items():
+        chg = _price_change(etfs, col, MARKET_START_DATE, MARKET_END_DATE)
+        shocks[f"d_tsy_{bucket}"] = round(chg, 6)
+        print(f"  {bucket} ({col}): {chg:+.4f}  ({chg*100:+.2f}%)")
 
-    print("End date yield curve:")
-    end_yields = get_yield_on_date(treasury, MARKET_END_DATE)
+    # ── RMBS multiplier: MBS price change / Treasury benchmark price change ───
+    print("\nRMBS multiplier calculation:")
+    print("  MBS (MBB):")
+    mbs_chg = _price_change(etfs, MBS_COL, MARKET_START_DATE, MARKET_END_DATE)
+    print(f"    price change: {mbs_chg:+.4f}  ({mbs_chg*100:+.2f}%)")
 
-    print()
-    print("Yield changes by FRED maturity (end - start):")
-    for col, mat in zip(FRED_COLS, FRED_MATURITIES):
-        chg = end_yields[col] - start_yields[col]
-        print(f"  {col} ({mat}yr): {chg:+.4f}%")
+    print("  Treasury benchmark (GOVT):")
+    tsy_chg = _price_change(etfs, TSY_BMARK, MARKET_START_DATE, MARKET_END_DATE)
+    print(f"    price change: {tsy_chg:+.4f}  ({tsy_chg*100:+.2f}%)")
 
-    # Compute shock for each bucket via interpolation
-    shocks = {}
-    print()
-    print("Interpolated shocks by bucket:")
-    for bucket, midpoint in BUCKETS.items():
-        start_y = interpolate_yield(start_yields, midpoint)
-        end_y   = interpolate_yield(end_yields,   midpoint)
-        shock   = end_y - start_y
-        shocks[f"d_tsy_{bucket}"] = round(shock, 6)
-        print(f"  {bucket} (midpoint {midpoint}yr): {shock:+.4f}%")
+    if abs(tsy_chg) < 1e-8:
+        raise ValueError("Treasury benchmark price change is ~0; cannot compute multiplier.")
 
-    shocks["rmbs_multiplier"] = RMBS_MULTIPLIER
+    rmbs_multiplier = mbs_chg / tsy_chg   # both negative → positive ratio
+    print(f"  RMBS multiplier = {mbs_chg:.4f} / {tsy_chg:.4f} = {rmbs_multiplier:.4f}")
 
-    # Saving
+    shocks["rmbs_multiplier"] = round(rmbs_multiplier, 6)
+
+    # ── Save ──────────────────────────────────────────────────────────────────
     out = pd.DataFrame([shocks])
     out_path = DATA_DIR / "market_shocks.parquet"
     out.to_parquet(out_path, index=False)
 
-    print()
-    print(f"Saved -> {out_path}")
+    print(f"\nSaved -> {out_path}")
     print(out.T.rename(columns={0: "value"}).to_string())
 
 

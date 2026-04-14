@@ -45,6 +45,18 @@ def _fmt_mean(
     return f"{np.nanmean(v):.{digits}f}{suffix}"
 
 
+def _fmt_median(
+    x: pd.Series,
+    scale: float = 1.0,
+    digits: int = 1,
+    suffix: str = "",
+) -> str:
+    v = (x.dropna() * scale).astype(float)
+    if len(v) == 0:
+        return ""
+    return f"{np.nanmedian(v):.{digits}f}{suffix}"
+
+
 def _fmt_sd(
     x: pd.Series,
     scale: float = 1.0,
@@ -207,22 +219,17 @@ def main() -> None:
 
     banks["mm_assets"] = banks["Total Asset"] - banks["loss_total"]
 
-    banks["total_exposure"] = (
-        banks["exp_rmbs"]
-        + banks["exp_tsy_other"]
-        + banks["exp_res_mtg"]
-        + banks["exp_other_loan"]
-    )
-
-    banks["share_rmbs"] = 100 * _safe_div(banks["exp_rmbs"], banks["total_exposure"])
+    # Share metrics: fraction of total MTM LOSS from each asset class (loss shares),
+    # matching Jiang et al. (2023) / the prev-author replication approach.
+    banks["share_rmbs"] = 100 * _safe_div(banks["loss_rmbs"], banks["loss_total"])
     banks["share_tsy_other"] = 100 * _safe_div(
-        banks["exp_tsy_other"], banks["total_exposure"]
+        banks["loss_tsy_other"], banks["loss_total"]
     )
     banks["share_res_mtg"] = 100 * _safe_div(
-        banks["exp_res_mtg"], banks["total_exposure"]
+        banks["loss_res_mtg"], banks["loss_total"]
     )
     banks["share_other_loan"] = 100 * _safe_div(
-        banks["exp_other_loan"], banks["total_exposure"]
+        banks["loss_other_loan"], banks["loss_total"]
     )
 
     banks["loss_asset_pct"] = 100 * _safe_div(
@@ -250,7 +257,7 @@ def main() -> None:
     out_index.append("Bank-Level Loss")
     out_rows.append(
         {
-            k: _fmt_mean(
+            k: _fmt_median(
                 df["loss_total"],
                 scale=1 / 1000,
                 digits=1,
@@ -281,7 +288,7 @@ def main() -> None:
     for label, col in share_map.items():
         out_index.append(label)
         out_rows.append(
-            {k: _fmt_mean(df[col], digits=1) for k, df in groups.items()}
+            {k: _fmt_median(df[col], digits=1) for k, df in groups.items()}
         )
         out_index.append("")
         out_rows.append(
@@ -290,7 +297,7 @@ def main() -> None:
 
     out_index.append("Loss/Asset")
     out_rows.append(
-        {k: _fmt_mean(df["loss_asset_pct"], digits=1) for k, df in groups.items()}
+        {k: _fmt_median(df["loss_asset_pct"], digits=1) for k, df in groups.items()}
     )
     out_index.append("")
     out_rows.append(
@@ -300,7 +307,7 @@ def main() -> None:
     out_index.append("Uninsured Deposit/MM Asset")
     out_rows.append(
         {
-            k: _fmt_mean(df["unins_dep_mm_asset_pct"], digits=1)
+            k: _fmt_median(df["unins_dep_mm_asset_pct"], digits=1)
             for k, df in groups.items()
         }
     )

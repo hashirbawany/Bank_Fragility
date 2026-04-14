@@ -14,7 +14,7 @@ load_dotenv(Path(__file__).resolve().parent / ".env")
 # ── Paths ────────────────────────────────────────────────────────────────────
 ROOT        = Path(__file__).resolve().parent
 SCRIPTS     = ROOT / "scripts"
-DOC_SCRIPTS = ROOT / "document_scripts"
+DOC_SCRIPTS = ROOT / "documents"
 DATA_DIR    = ROOT / "_data"
 OUTPUT_DIR  = ROOT / "_output"
 DOCUMENTS   = ROOT / "documents"
@@ -26,7 +26,7 @@ REPORT_DATE       = REPORT_DATE_SLASH.replace("/", "")
 PYTHON = sys.executable
 
 
-# ── Helper ───────────────────────────────────────────────────────────────────
+# ── Helpers ───────────────────────────────────────────────────────────────────
 def run(script: str) -> list:
     """
     Return a doit action that runs a script with the current Python.
@@ -36,7 +36,7 @@ def run(script: str) -> list:
 
 
 def doc_run(script: str) -> list:
-    """Same as run() but for scripts in document_scripts/."""
+    """Same as run() but for scripts in documents/."""
     return [[PYTHON, str(DOC_SCRIPTS / script)]]
 
 
@@ -84,11 +84,11 @@ def task_pull_mbs():
 
 
 def task_compute_yield_shocks():
-    """Compute market shock parameters from Treasury yield changes."""
+    """Compute market shock parameters from Treasury ETF price returns."""
     return {
         "file_dep": [
             SCRIPTS / "compute_yield_shocks.py",
-            DATA_DIR / "treasury_yields.parquet",
+            DATA_DIR / "mbs_etfs.parquet",
             ENV_FILE,
         ],
         "targets":  [DATA_DIR / "market_shocks.parquet"],
@@ -139,72 +139,70 @@ def task_make_table_1():
     }
 
 
-
-def task_generate_pdf():
-    """Generate LaTeX project description and compile to PDF."""
+def task_execute_eda_notebook():
+    """Execute eda.ipynb in-place to refresh outputs."""
     return {
         "file_dep": [
-            DOC_SCRIPTS / "generate_pdf.py",
+            DOCUMENTS / "eda.ipynb",
+            DATA_DIR  / f"bank_panel_{REPORT_DATE}.parquet",
+            DATA_DIR  / "mbs_etfs.parquet",
+            DATA_DIR  / "treasury_yields.parquet",
+            DATA_DIR  / "gsib_list.parquet",
+            DATA_DIR  / "market_shocks.parquet",
             ENV_FILE,
         ],
-        "targets":  [DOCUMENTS / "project_description.pdf"],
-        "actions":  doc_run("generate_pdf.py"),
+        "actions": [[PYTHON, "-m", "jupyter", "nbconvert",
+                     "--to", "notebook", "--execute", "--inplace",
+                     str(DOCUMENTS / "eda.ipynb")]],
         "verbosity": 2,
     }
 
 
-def task_generate_pipeline_doc():
-    """Generate pipeline technical documentation PDF."""
+def task_execute_methodology_notebook():
+    """Execute methodology_notebook.ipynb in-place to refresh outputs."""
     return {
         "file_dep": [
-            DOC_SCRIPTS / "generate_pipeline_doc.py",
+            DOCUMENTS / "methodology_notebook.ipynb",
+            DATA_DIR  / "treasury_yields.parquet",
+            DATA_DIR  / "mbs_etfs.parquet",
+            DATA_DIR  / "market_shocks.parquet",
+            DATA_DIR  / f"bank_panel_{REPORT_DATE}.parquet",
             ENV_FILE,
         ],
-        "targets":  [DOCUMENTS / "pipeline_documentation.pdf"],
-        "actions":  doc_run("generate_pipeline_doc.py"),
+        "actions": [[PYTHON, "-m", "jupyter", "nbconvert",
+                     "--to", "notebook", "--execute", "--inplace",
+                     str(DOCUMENTS / "methodology_notebook.ipynb")]],
         "verbosity": 2,
     }
 
 
-def task_generate_research_paper():
-    """Generate research paper PDF with embedded analysis tables."""
+def task_execute_analysis_notebook():
+    """Execute analysis_notebook.ipynb in-place to refresh outputs."""
     return {
         "file_dep": [
-            DOC_SCRIPTS / "generate_research_paper.py",
-            OUTPUT_DIR / "table_1.tex",
+            DOCUMENTS / "analysis_notebook.ipynb",
+            DATA_DIR  / f"bank_panel_{REPORT_DATE}.parquet",
+            DATA_DIR  / "market_shocks.parquet",
             OUTPUT_DIR / "table_1.csv",
-            OUTPUT_DIR / f"summary_stats_{REPORT_DATE}.xlsx",
-            OUTPUT_DIR / f"figure_A1_{REPORT_DATE}.png",
             ENV_FILE,
         ],
-        "targets":  [DOCUMENTS / "research_paper.pdf"],
-        "actions":  doc_run("generate_research_paper.py"),
+        "actions": [[PYTHON, "-m", "jupyter", "nbconvert",
+                     "--to", "notebook", "--execute", "--inplace",
+                     str(DOCUMENTS / "analysis_notebook.ipynb")]],
         "verbosity": 2,
     }
 
 
-def task_generate_student_notebook():
-    """Generate the student teaching notebook (student_notebook.ipynb)."""
+def task_generate_blog():
+    """Build blog HTML from executed notebooks."""
     return {
         "file_dep": [
-            DOC_SCRIPTS / "generate_student_notebook.py",
-            ENV_FILE,
-        ],
-        "targets":  [DOCUMENTS / "student_notebook.ipynb"],
-        "actions":  doc_run("generate_student_notebook.py"),
-        "verbosity": 2,
-    }
-
-
-def task_generate_blog_html():
-    """Convert student notebook + EDA charts to blog-style HTML (bank_fragility_blog.html)."""
-    return {
-        "file_dep": [
-            DOC_SCRIPTS / "generate_blog_html.py",
-            DOCUMENTS   / "student_notebook.ipynb",
+            DOC_SCRIPTS / "generate_blog.py",
             DOCUMENTS   / "eda.ipynb",
+            DOCUMENTS   / "methodology_notebook.ipynb",
+            DOCUMENTS   / "analysis_notebook.ipynb",
         ],
         "targets":  [DOCUMENTS / "bank_fragility_blog.html"],
-        "actions":  doc_run("generate_blog_html.py"),
+        "actions":  doc_run("generate_blog.py"),
         "verbosity": 2,
     }
